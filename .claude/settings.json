@@ -1,0 +1,7 @@
+{
+  "skillOverrides": {
+    "vercel-plugin:nextjs": "off",
+    "vercel-plugin:next-cache-components": "off",
+    "vercel-plugin:react-best-practices": "off"
+  }
+}
