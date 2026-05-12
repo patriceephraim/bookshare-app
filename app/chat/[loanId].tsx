@@ -1,5 +1,7 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
+  ActivityIndicator,
+  Alert,
   FlatList,
   KeyboardAvoidingView,
   Platform,
@@ -12,38 +14,82 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { ArrowLeft, Send } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { MOCK_MESSAGES, MOCK_CHAT_THREADS } from '@/lib/mock-data';
-import type { Message } from '@/lib/mock-data';
+import { useApi, LoanPublic, MessagePublic, UserMe } from '@/lib/api';
 
-function formatTime(ts: string): string {
-  const d = new Date(ts);
-  return d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+function formatTime(iso: string): string {
+  return new Date(iso).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
 }
 
 export default function ChatScreen() {
   const { loanId } = useLocalSearchParams<{ loanId: string }>();
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const thread = MOCK_CHAT_THREADS.find((t) => t.loanId === loanId) ?? MOCK_CHAT_THREADS[0];
-  const [messages, setMessages] = useState<Message[]>(
-    MOCK_MESSAGES.filter((m) => m.loanId === (loanId ?? 'loan1'))
-  );
-  const [text, setText] = useState('');
+  const api = useApi();
+  const flatListRef = useRef<FlatList>(null);
 
-  function send() {
-    if (!text.trim()) return;
-    setMessages((prev) => [
-      ...prev,
-      {
-        id: `m${Date.now()}`,
-        loanId: loanId ?? 'loan1',
-        senderId: 'me',
-        text: text.trim(),
-        timestamp: new Date().toISOString(),
-      },
-    ]);
-    setText('');
+  const [loan, setLoan] = useState<LoanPublic | null>(null);
+  const [me, setMe] = useState<UserMe | null>(null);
+  const [messages, setMessages] = useState<MessagePublic[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [text, setText] = useState('');
+  const [sending, setSending] = useState(false);
+
+  async function loadMessages() {
+    if (!loanId) return;
+    try {
+      const msgs = await api.getLoanMessages(loanId);
+      setMessages(msgs);
+    } catch {
+      // silent poll failure
+    }
   }
+
+  useEffect(() => {
+    if (!loanId) return;
+    Promise.all([api.getLoan(loanId), api.getMe(), api.getLoanMessages(loanId)])
+      .then(([l, m, msgs]) => {
+        setLoan(l);
+        setMe(m);
+        setMessages(msgs);
+      })
+      .catch(e => Alert.alert('Error', e.message ?? 'Could not load chat.'))
+      .finally(() => setLoading(false));
+  }, [loanId]);
+
+  // Poll every 5 seconds for new messages
+  useEffect(() => {
+    const interval = setInterval(loadMessages, 5000);
+    return () => clearInterval(interval);
+  }, [loanId]);
+
+  async function send() {
+    if (!text.trim() || !loanId) return;
+    const content = text.trim();
+    setText('');
+    setSending(true);
+    try {
+      const msg = await api.sendMessage(loanId, content);
+      setMessages(prev => [...prev, msg]);
+      setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 100);
+    } catch (e: any) {
+      Alert.alert('Error', e.message ?? 'Could not send message.');
+      setText(content);
+    } finally {
+      setSending(false);
+    }
+  }
+
+  if (loading) {
+    return (
+      <SafeAreaView className="flex-1 bg-cream-50 items-center justify-center" edges={['top']}>
+        <ActivityIndicator color="#3F7C6E" />
+      </SafeAreaView>
+    );
+  }
+
+  const myId = me?.id ?? '';
+  const isMyBorrow = loan ? loan.borrower.id === myId : true;
+  const other = loan ? (isMyBorrow ? loan.lender : loan.borrower) : null;
 
   return (
     <SafeAreaView className="flex-1 bg-cream-50" edges={['top']}>
@@ -53,18 +99,24 @@ export default function ChatScreen() {
           <ArrowLeft size={22} color="#1F1B16" strokeWidth={1.75} />
         </TouchableOpacity>
         <View className="flex-1">
-          <Text className="font-sans-semibold text-base text-ink-900">{thread.otherUser.name}</Text>
-          <Text className="font-serif text-sm text-ink-500" numberOfLines={1}>
-            re: {thread.book.title}
+          <Text className="font-sans-semibold text-base text-ink-900">
+            {other ? `@${other.username}` : '…'}
           </Text>
+          {loan ? (
+            <Text className="font-serif text-sm text-ink-500" numberOfLines={1}>
+              re: {loan.listing.book.title}
+            </Text>
+          ) : null}
         </View>
-        <TouchableOpacity
-          onPress={() => router.push(`/loan/${loanId}` as any)}
-          className="bg-cream-100 border border-cream-200 rounded-button px-3 py-1.5"
-          activeOpacity={0.7}
-        >
-          <Text className="font-sans-medium text-xs text-ink-700">View loan</Text>
-        </TouchableOpacity>
+        {loan ? (
+          <TouchableOpacity
+            onPress={() => router.push(`/loan/${loanId}` as any)}
+            className="bg-cream-100 border border-cream-200 rounded-button px-3 py-1.5"
+            activeOpacity={0.7}
+          >
+            <Text className="font-sans-medium text-xs text-ink-700">View loan</Text>
+          </TouchableOpacity>
+        ) : null}
       </View>
 
       <KeyboardAvoidingView
@@ -72,13 +124,19 @@ export default function ChatScreen() {
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         keyboardVerticalOffset={0}
       >
-        {/* Messages */}
         <FlatList
+          ref={flatListRef}
           data={messages}
           keyExtractor={(item) => item.id}
           contentContainerStyle={{ padding: 16, gap: 12 }}
+          onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: false })}
+          ListEmptyComponent={
+            <View className="flex-1 items-center justify-center py-12">
+              <Text className="font-sans text-sm text-ink-300">No messages yet. Say hello!</Text>
+            </View>
+          }
           renderItem={({ item }) => {
-            const isMe = item.senderId === 'me';
+            const isMe = item.sender.id === myId;
             return (
               <View className={`flex-row ${isMe ? 'justify-end' : 'justify-start'}`}>
                 <View
@@ -88,15 +146,11 @@ export default function ChatScreen() {
                       : 'bg-cream-100 border border-cream-200 rounded-bl-sm'
                   }`}
                 >
-                  <Text
-                    className={`font-sans text-base leading-snug ${isMe ? 'text-white' : 'text-ink-900'}`}
-                  >
-                    {item.text}
+                  <Text className={`font-sans text-base leading-snug ${isMe ? 'text-white' : 'text-ink-900'}`}>
+                    {item.content}
                   </Text>
-                  <Text
-                    className={`font-sans text-xs mt-1 ${isMe ? 'text-white/60' : 'text-ink-300'}`}
-                  >
-                    {formatTime(item.timestamp)}
+                  <Text className={`font-sans text-xs mt-1 ${isMe ? 'text-white/60' : 'text-ink-300'}`}>
+                    {formatTime(item.created_at)}
                   </Text>
                 </View>
               </View>
@@ -124,9 +178,9 @@ export default function ChatScreen() {
           </View>
           <TouchableOpacity
             onPress={send}
-            disabled={!text.trim()}
+            disabled={!text.trim() || sending}
             className="w-11 h-11 bg-teal-500 rounded-full items-center justify-center"
-            style={{ opacity: text.trim() ? 1 : 0.4 }}
+            style={{ opacity: text.trim() && !sending ? 1 : 0.4 }}
             activeOpacity={0.8}
           >
             <Send size={18} color="#fff" strokeWidth={2} />

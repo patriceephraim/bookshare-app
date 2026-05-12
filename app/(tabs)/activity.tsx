@@ -1,42 +1,118 @@
-import { ScrollView, Text, TouchableOpacity, View } from 'react-native';
+import { useCallback, useEffect, useState } from 'react';
+import { ActivityIndicator, Alert, RefreshControl, ScrollView, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import { Bell, MessageCircle, Check, X } from 'lucide-react-native';
-import { MOCK_REQUESTS, MOCK_LOANS, MOCK_CHAT_THREADS } from '@/lib/mock-data';
+import { Bell, MessageCircle } from 'lucide-react-native';
+import { useApi, LoanPublic, UserMe } from '@/lib/api';
 import { Avatar } from '@/components/ui/Avatar';
 import { Button } from '@/components/ui/Button';
 import { EmptyState } from '@/components/ui/EmptyState';
 
-function daysUntil(dateStr: string): number {
-  const due = new Date(dateStr);
-  const now = new Date();
-  return Math.ceil((due.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+function timeAgo(iso: string): string {
+  const diff = Date.now() - new Date(iso).getTime();
+  const mins = Math.floor(diff / 60000);
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  return `${Math.floor(hrs / 24)}d ago`;
 }
 
 export default function ActivityScreen() {
   const router = useRouter();
+  const api = useApi();
+
+  const [loans, setLoans] = useState<LoanPublic[]>([]);
+  const [me, setMe] = useState<UserMe | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [acting, setActing] = useState<string | null>(null);
+
+  async function load() {
+    try {
+      const [l, m] = await Promise.all([api.getMyLoans(), api.getMe()]);
+      setLoans(l);
+      setMe(m);
+    } catch (e: any) {
+      Alert.alert('Error', e.message ?? 'Could not load activity.');
+    }
+  }
+
+  useEffect(() => {
+    load().finally(() => setLoading(false));
+  }, []);
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await load();
+    setRefreshing(false);
+  }, []);
+
+  async function handleAccept(loanId: string) {
+    setActing(loanId);
+    try {
+      const updated = await api.acceptLoan(loanId);
+      setLoans(prev => prev.map(l => l.id === loanId ? updated : l));
+    } catch (e: any) {
+      Alert.alert('Error', e.message ?? 'Could not accept.');
+    } finally {
+      setActing(null);
+    }
+  }
+
+  async function handleDecline(loanId: string) {
+    setActing(loanId);
+    try {
+      const updated = await api.declineLoan(loanId);
+      setLoans(prev => prev.map(l => l.id === loanId ? updated : l));
+    } catch (e: any) {
+      Alert.alert('Error', e.message ?? 'Could not decline.');
+    } finally {
+      setActing(null);
+    }
+  }
+
+  if (loading) {
+    return (
+      <SafeAreaView className="flex-1 bg-cream-50 items-center justify-center" edges={['top']}>
+        <ActivityIndicator color="#3F7C6E" />
+      </SafeAreaView>
+    );
+  }
+
+  const myId = me?.id ?? '';
+
+  // Loans where I am the lender and status is still "requested"
+  const incomingRequests = loans.filter(l => l.lender.id === myId && l.status === 'requested');
+  // Active loans (either side)
+  const activeLoans = loans.filter(l => l.status === 'active');
+  // All loans that have messages visible (all non-declined, for thread list)
+  const threads = loans.filter(l => l.status !== 'declined');
 
   return (
     <SafeAreaView className="flex-1 bg-cream-50" edges={['top']}>
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 100 }}>
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={{ paddingBottom: 100 }}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#3F7C6E" />}
+      >
         <View className="px-5 pt-4 pb-2">
           <Text className="font-serif text-2xl text-ink-900">Activity</Text>
         </View>
 
-        {/* Borrow requests */}
+        {/* Incoming borrow requests */}
         <View className="mt-4">
           <View className="flex-row items-center justify-between px-5 mb-3">
             <Text className="font-sans-semibold text-sm text-ink-500 uppercase tracking-wide">
               Requests for your books
             </Text>
-            {MOCK_REQUESTS.length > 0 && (
+            {incomingRequests.length > 0 && (
               <View className="bg-terracotta-50 rounded-pill px-2.5 py-0.5">
-                <Text className="font-sans-semibold text-xs text-terracotta-500">{MOCK_REQUESTS.length}</Text>
+                <Text className="font-sans-semibold text-xs text-terracotta-500">{incomingRequests.length}</Text>
               </View>
             )}
           </View>
 
-          {MOCK_REQUESTS.length === 0 ? (
+          {incomingRequests.length === 0 ? (
             <View className="px-5">
               <EmptyState
                 icon={Bell}
@@ -45,30 +121,45 @@ export default function ActivityScreen() {
               />
             </View>
           ) : (
-            <View className="gap-0">
-              {MOCK_REQUESTS.map((req) => (
-                <View key={req.id} className="mx-5 mb-3 bg-cream-100 rounded-card p-4 border border-cream-200 gap-3">
+            incomingRequests.map((loan) => {
+              const initials = loan.borrower.username.slice(0, 2).toUpperCase();
+              const busy = acting === loan.id;
+              return (
+                <View key={loan.id} className="mx-5 mb-3 bg-cream-100 rounded-card p-4 border border-cream-200 gap-3">
                   <View className="flex-row items-start gap-3">
-                    <Avatar initials={req.requester.initials} size="md" colorIndex={1} />
+                    <Avatar initials={initials} size="md" colorIndex={1} />
                     <View className="flex-1">
                       <Text className="font-sans-semibold text-sm text-ink-900">
-                        {req.requester.name} wants to borrow
+                        @{loan.borrower.username} wants to borrow
                       </Text>
                       <Text className="font-serif text-base text-ink-900 mt-0.5" numberOfLines={1}>
-                        {req.book.title}
+                        {loan.listing.book.title}
                       </Text>
-                      <Text className="font-sans text-sm text-ink-500 mt-1 leading-snug">
-                        "{req.message}"
-                      </Text>
+                      {loan.message ? (
+                        <Text className="font-sans text-sm text-ink-500 mt-1 leading-snug" numberOfLines={2}>
+                          "{loan.message}"
+                        </Text>
+                      ) : null}
                     </View>
                   </View>
                   <View className="flex-row gap-2">
-                    <Button label="Accept" variant="primary" size="sm" onPress={() => {}} />
-                    <Button label="Decline" variant="outline" size="sm" danger onPress={() => {}} />
+                    <Button
+                      label={busy ? '…' : 'Accept'}
+                      variant="primary"
+                      size="sm"
+                      onPress={() => handleAccept(loan.id)}
+                    />
+                    <Button
+                      label={busy ? '…' : 'Decline'}
+                      variant="outline"
+                      size="sm"
+                      danger
+                      onPress={() => handleDecline(loan.id)}
+                    />
                   </View>
                 </View>
-              ))}
-            </View>
+              );
+            })
           )}
         </View>
 
@@ -77,74 +168,85 @@ export default function ActivityScreen() {
           <Text className="font-sans-semibold text-sm text-ink-500 uppercase tracking-wide px-5 mb-3">
             Active loans
           </Text>
-          {MOCK_LOANS.map((loan) => {
-            const days = loan.dueDate ? daysUntil(loan.dueDate) : null;
-            const isOverdue = days !== null && days < 0;
-            const isMyBorrow = loan.borrower.id === 'me';
-            const otherPerson = isMyBorrow ? loan.lender : loan.borrower;
-
-            return (
-              <TouchableOpacity
-                key={loan.id}
-                onPress={() => router.push(`/loan/${loan.id}`)}
-                className="mx-5 mb-3 bg-cream-100 rounded-card p-4 border border-cream-200"
-                activeOpacity={0.8}
-              >
-                <View className="flex-row items-center gap-3">
-                  <Avatar initials={otherPerson.initials} size="md" colorIndex={0} />
-                  <View className="flex-1">
-                    <Text className="font-serif text-base text-ink-900" numberOfLines={1}>
-                      {loan.book.title}
-                    </Text>
-                    <Text className="font-sans text-sm text-ink-500 mt-0.5">
-                      {isMyBorrow ? 'from' : 'to'} {otherPerson.name}
-                    </Text>
-                  </View>
-                  {days !== null && (
-                    <View className={`rounded-pill px-3 py-1 ${isOverdue ? 'bg-terracotta-50' : 'bg-teal-50'}`}>
-                      <Text className={`font-sans-medium text-xs ${isOverdue ? 'text-terracotta-500' : 'text-teal-900'}`}>
-                        {isOverdue ? `${Math.abs(days)}d late` : `${days}d left`}
+          {activeLoans.length === 0 ? (
+            <View className="px-5">
+              <EmptyState
+                icon={Bell}
+                title="No active loans"
+                message="Accept a request or borrow a book to see active loans here."
+              />
+            </View>
+          ) : (
+            activeLoans.map((loan) => {
+              const isMyBorrow = loan.borrower.id === myId;
+              const other = isMyBorrow ? loan.lender : loan.borrower;
+              const initials = other.username.slice(0, 2).toUpperCase();
+              return (
+                <TouchableOpacity
+                  key={loan.id}
+                  onPress={() => router.push(`/loan/${loan.id}` as any)}
+                  className="mx-5 mb-3 bg-cream-100 rounded-card p-4 border border-cream-200"
+                  activeOpacity={0.8}
+                >
+                  <View className="flex-row items-center gap-3">
+                    <Avatar initials={initials} size="md" colorIndex={0} />
+                    <View className="flex-1">
+                      <Text className="font-serif text-base text-ink-900" numberOfLines={1}>
+                        {loan.listing.book.title}
+                      </Text>
+                      <Text className="font-sans text-sm text-ink-500 mt-0.5">
+                        {isMyBorrow ? 'from' : 'to'} @{other.username}
                       </Text>
                     </View>
-                  )}
-                </View>
-              </TouchableOpacity>
-            );
-          })}
+                    <View className="bg-teal-50 rounded-pill px-3 py-1">
+                      <Text className="font-sans-medium text-xs text-teal-900">Active</Text>
+                    </View>
+                  </View>
+                </TouchableOpacity>
+              );
+            })
+          )}
         </View>
 
-        {/* Messages */}
+        {/* Message threads */}
         <View className="mt-6">
           <Text className="font-sans-semibold text-sm text-ink-500 uppercase tracking-wide px-5 mb-3">
             Messages
           </Text>
-          {MOCK_CHAT_THREADS.map((thread) => (
-            <TouchableOpacity
-              key={thread.loanId}
-              onPress={() => router.push(`/chat/${thread.loanId}`)}
-              className="mx-5 mb-2 flex-row items-center gap-3 py-3 border-b border-cream-200"
-              activeOpacity={0.7}
-            >
-              <View className="relative">
-                <Avatar initials={thread.otherUser.initials} size="md" colorIndex={2} />
-                {thread.unread && (
-                  <View className="absolute -top-0.5 -right-0.5 w-3 h-3 bg-terracotta-500 rounded-full border-2 border-cream-50" />
-                )}
-              </View>
-              <View className="flex-1">
-                <View className="flex-row items-center justify-between">
-                  <Text className="font-sans-semibold text-sm text-ink-900">{thread.otherUser.name}</Text>
-                  <Text className="font-sans text-xs text-ink-300">May 10</Text>
-                </View>
-                <Text className="font-serif text-sm text-ink-500 mt-0.5" numberOfLines={1}>
-                  re: {thread.book.title}
-                </Text>
-                <Text className="font-sans text-sm text-ink-500 mt-0.5" numberOfLines={1}>
-                  {thread.lastMessage}
-                </Text>
-              </View>
-            </TouchableOpacity>
-          ))}
+          {threads.length === 0 ? (
+            <View className="px-5">
+              <EmptyState
+                icon={MessageCircle}
+                title="No messages"
+                message="Message threads with lenders and borrowers appear here."
+              />
+            </View>
+          ) : (
+            threads.map((loan) => {
+              const isMyBorrow = loan.borrower.id === myId;
+              const other = isMyBorrow ? loan.lender : loan.borrower;
+              const initials = other.username.slice(0, 2).toUpperCase();
+              return (
+                <TouchableOpacity
+                  key={loan.id}
+                  onPress={() => router.push(`/chat/${loan.id}` as any)}
+                  className="mx-5 mb-2 flex-row items-center gap-3 py-3 border-b border-cream-200"
+                  activeOpacity={0.7}
+                >
+                  <Avatar initials={initials} size="md" colorIndex={2} />
+                  <View className="flex-1">
+                    <View className="flex-row items-center justify-between">
+                      <Text className="font-sans-semibold text-sm text-ink-900">@{other.username}</Text>
+                      <Text className="font-sans text-xs text-ink-300">{timeAgo(loan.requested_at)}</Text>
+                    </View>
+                    <Text className="font-serif text-sm text-ink-500 mt-0.5" numberOfLines={1}>
+                      re: {loan.listing.book.title}
+                    </Text>
+                  </View>
+                </TouchableOpacity>
+              );
+            })
+          )}
         </View>
       </ScrollView>
     </SafeAreaView>

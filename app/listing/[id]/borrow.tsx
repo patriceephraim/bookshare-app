@@ -1,21 +1,67 @@
-import { ScrollView, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { useEffect, useState } from 'react';
+import { ActivityIndicator, Alert, ScrollView, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { MOCK_BOOKS } from '@/lib/mock-data';
+import { Calendar, MapPin } from 'lucide-react-native';
+import { useApi, ListingPublic } from '@/lib/api';
+import { Avatar } from '@/components/ui/Avatar';
 import { Button } from '@/components/ui/Button';
 import { Header } from '@/components/ui/Header';
-import { Avatar } from '@/components/ui/Avatar';
-import { Calendar, MapPin } from 'lucide-react-native';
-import { useState } from 'react';
 
 const DURATIONS = ['1 week', '2 weeks', '3 weeks', '4 weeks'];
 
 export default function BorrowScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
-  const book = MOCK_BOOKS.find((b) => b.id === id) ?? MOCK_BOOKS[0];
+  const api = useApi();
+
+  const [listing, setListing] = useState<ListingPublic | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [sending, setSending] = useState(false);
   const [message, setMessage] = useState('');
   const [duration, setDuration] = useState('3 weeks');
+
+  useEffect(() => {
+    if (!id) return;
+    api.getListing(id)
+      .then(setListing)
+      .catch(() => Alert.alert('Error', 'Could not load listing.'))
+      .finally(() => setLoading(false));
+  }, [id]);
+
+  async function handleSend() {
+    if (!listing) return;
+    setSending(true);
+    try {
+      const loan = await api.createLoan(listing.id, message.trim() || undefined);
+      router.replace(`/loan/${loan.id}` as any);
+    } catch (e: any) {
+      Alert.alert('Could not send request', e.message ?? 'Please try again.');
+    } finally {
+      setSending(false);
+    }
+  }
+
+  if (loading) {
+    return (
+      <SafeAreaView className="flex-1 bg-cream-50 items-center justify-center" edges={['bottom']}>
+        <ActivityIndicator color="#3F7C6E" />
+      </SafeAreaView>
+    );
+  }
+
+  if (!listing) {
+    return (
+      <SafeAreaView className="flex-1 bg-cream-50" edges={['bottom']}>
+        <Header title="Request to borrow" showBack />
+        <View className="flex-1 items-center justify-center">
+          <Text className="font-serif text-lg text-ink-900">Book not found</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  const initials = listing.user.username.slice(0, 2).toUpperCase();
 
   return (
     <SafeAreaView className="flex-1 bg-cream-50" edges={['bottom']}>
@@ -30,11 +76,11 @@ export default function BorrowScreen() {
         {/* Book summary */}
         <View className="flex-row items-center gap-4 bg-cream-100 rounded-card p-4 border border-cream-200">
           <View className="w-12 h-18 bg-teal-50 rounded-lg items-center justify-center">
-            <Text className="font-serif-bold text-xl text-teal-500">{book.title[0]}</Text>
+            <Text className="font-serif-bold text-xl text-teal-500">{listing.book.title[0]}</Text>
           </View>
           <View className="flex-1">
-            <Text className="font-serif text-base text-ink-900" numberOfLines={2}>{book.title}</Text>
-            <Text className="font-sans text-sm text-ink-500">{book.author}</Text>
+            <Text className="font-serif text-base text-ink-900" numberOfLines={2}>{listing.book.title}</Text>
+            <Text className="font-sans text-sm text-ink-500">{listing.book.author}</Text>
           </View>
         </View>
 
@@ -42,12 +88,12 @@ export default function BorrowScreen() {
         <View className="gap-2">
           <Text className="font-sans-semibold text-sm text-ink-500 uppercase tracking-wide">Lending from</Text>
           <View className="flex-row items-center gap-3">
-            <Avatar initials={book.owner.initials} size="md" colorIndex={1} />
+            <Avatar initials={initials} size="md" colorIndex={1} />
             <View>
-              <Text className="font-sans-semibold text-base text-ink-900">{book.owner.name}</Text>
+              <Text className="font-sans-semibold text-base text-ink-900">@{listing.user.username}</Text>
               <View className="flex-row items-center gap-1">
                 <MapPin size={11} color="#B5AB99" strokeWidth={1.75} />
-                <Text className="font-sans text-sm text-ink-500">{book.owner.neighborhood}</Text>
+                <Text className="font-sans text-sm text-ink-500">Glebe, Ottawa</Text>
               </View>
             </View>
           </View>
@@ -93,7 +139,7 @@ export default function BorrowScreen() {
             />
           </View>
           <Text className="font-sans text-xs text-ink-300">
-            A friendly note goes a long way. {book.owner.name} can see your profile.
+            A friendly note goes a long way. @{listing.user.username} can see your profile.
           </Text>
         </View>
 
@@ -105,11 +151,10 @@ export default function BorrowScreen() {
         </View>
       </ScrollView>
 
-      {/* Footer */}
       <View className="px-5 py-4 border-t border-cream-200 bg-cream-50">
         <Button
-          label="Send request"
-          onPress={() => router.replace('/(tabs)/activity' as any)}
+          label={sending ? 'Sending…' : 'Send request'}
+          onPress={handleSend}
           fullWidth
           size="lg"
         />

@@ -1,28 +1,69 @@
-import { ScrollView, Switch, Text, TouchableOpacity, View } from 'react-native';
+import { Alert, ScrollView, Switch, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { useClerk, useUser } from '@clerk/clerk-expo';
 import {
   Bell,
   MapPin,
   Moon,
   Shield,
   ChevronRight,
-  LogOut,
   BookOpen,
 } from 'lucide-react-native';
 import { Header } from '@/components/ui/Header';
 import { Button } from '@/components/ui/Button';
-import { ME } from '@/lib/mock-data';
+import { useApi, UserMe } from '@/lib/api';
 import { Avatar } from '@/components/ui/Avatar';
+
+const NEIGHBOURHOODS = [
+  { name: 'Glebe',            lat: 45.4185, lng: -75.6973 },
+  { name: 'Centretown',       lat: 45.4203, lng: -75.6953 },
+  { name: 'Westboro',         lat: 45.3970, lng: -75.7510 },
+  { name: 'Old Ottawa South', lat: 45.3933, lng: -75.6856 },
+  { name: 'Hintonburg',       lat: 45.4031, lng: -75.7242 },
+  { name: 'ByWard Market',    lat: 45.4290, lng: -75.6925 },
+];
+
+function homeLabel(lat: number | null | undefined, lng: number | null | undefined): string {
+  if (lat == null || lng == null) return 'Not set';
+  let nearest = NEIGHBOURHOODS[0];
+  let minDist = Infinity;
+  for (const n of NEIGHBOURHOODS) {
+    const d = Math.hypot(n.lat - lat, n.lng - lng);
+    if (d < minDist) { minDist = d; nearest = n; }
+  }
+  return `${nearest.name}, Ottawa`;
+}
 
 export default function SettingsScreen() {
   const router = useRouter();
+  const { signOut } = useClerk();
+  const { user } = useUser();
+  const api = useApi();
+  const [me, setMe] = useState<UserMe | null>(null);
   const [notifs, setNotifs] = useState(true);
   const [borrowRequests, setBorrowRequests] = useState(true);
   const [messages, setMessages] = useState(true);
   const [reminders, setReminders] = useState(false);
   const [darkMode, setDarkMode] = useState(false);
+  const [signingOut, setSigningOut] = useState(false);
+
+  useEffect(() => {
+    api.getMe().then(setMe).catch(() => {});
+  }, []);
+
+  const handleSignOut = async () => {
+    setSigningOut(true);
+    try {
+      await signOut();
+      router.replace('/(onboarding)/welcome' as any);
+    } catch (err: any) {
+      Alert.alert('Sign out failed', err?.message ?? 'Please try again.');
+    } finally {
+      setSigningOut(false);
+    }
+  };
 
   return (
     <SafeAreaView className="flex-1 bg-cream-50" edges={['bottom']}>
@@ -39,10 +80,14 @@ export default function SettingsScreen() {
             className="flex-row items-center gap-4 bg-cream-100 rounded-card p-4 border border-cream-200"
             activeOpacity={0.8}
           >
-            <Avatar initials={ME.initials} size="md" colorIndex={0} />
+            <Avatar initials={[user?.firstName?.[0], user?.lastName?.[0]].filter(Boolean).join('').toUpperCase() || user?.username?.slice(0, 2).toUpperCase() || '?'} size="md" colorIndex={0} />
             <View className="flex-1">
-              <Text className="font-sans-semibold text-base text-ink-900">{ME.name}</Text>
-              <Text className="font-sans text-sm text-ink-500">{ME.neighborhood}</Text>
+              <Text className="font-sans-semibold text-base text-ink-900">
+                {[user?.firstName, user?.lastName].filter(Boolean).join(' ') || user?.username || '—'}
+              </Text>
+              <Text className="font-sans text-sm text-ink-500">
+                {me?.username ? `@${me.username}` : user?.username ? `@${user.username}` : '—'}
+              </Text>
             </View>
             <ChevronRight size={16} color="#B5AB99" strokeWidth={1.75} />
           </TouchableOpacity>
@@ -80,7 +125,7 @@ export default function SettingsScreen() {
         </Section>
 
         <Section title="Location">
-          <NavRow icon={MapPin} label="Home neighbourhood" value="Glebe, Ottawa" />
+          <NavRow icon={MapPin} label="Home neighbourhood" value={homeLabel(me?.home_lat, me?.home_lng)} />
           <NavRow icon={MapPin} label="Search radius" value="2 km" />
         </Section>
 
@@ -109,11 +154,13 @@ export default function SettingsScreen() {
         {/* Sign out */}
         <View className="px-5 pt-2 pb-6">
           <Button
-            label="Sign out"
+            label={signingOut ? 'Signing out…' : 'Sign out'}
             variant="outline"
             danger
             fullWidth
-            onPress={() => router.replace('/(onboarding)/welcome' as any)}
+            loading={signingOut}
+            disabled={signingOut}
+            onPress={handleSignOut}
           />
         </View>
       </ScrollView>

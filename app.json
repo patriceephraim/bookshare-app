@@ -35,7 +35,22 @@
           "backgroundColor": "#6B5239"
         }
       ],
-      "expo-font"
+      "expo-font",
+      "expo-secure-store",
+      "expo-web-browser",
+      "expo-camera",
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "Bookshare uses your location to show books near you."
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Bookshare uses your photos to identify book covers."
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true
