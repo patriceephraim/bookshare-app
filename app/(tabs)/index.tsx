@@ -7,6 +7,7 @@ import {
   useWindowDimensions,
   View,
 } from 'react-native';
+import { Image } from 'expo-image';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Search, SlidersHorizontal } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
@@ -191,8 +192,12 @@ export default function MapScreen() {
               className="flex-row items-center gap-4 py-3 border-b border-cream-200"
               activeOpacity={0.7}
             >
-              <View className="w-10 h-10 bg-teal-50 rounded-lg items-center justify-center">
-                <Text className="font-serif-bold text-base text-teal-500">{listing.book.title[0]}</Text>
+              <View className="w-10 h-10 bg-teal-50 rounded-lg items-center justify-center overflow-hidden flex-shrink-0">
+                {listing.book.cover_url ? (
+                  <Image source={{ uri: listing.book.cover_url }} style={{ width: 40, height: 40 }} contentFit="cover" />
+                ) : (
+                  <Text className="font-serif-bold text-base text-teal-500">{listing.book.title[0]}</Text>
+                )}
               </View>
               <View className="flex-1">
                 <Text className="font-serif text-base text-ink-900" numberOfLines={1}>{listing.book.title}</Text>

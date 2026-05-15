@@ -3,6 +3,7 @@ import { ActivityIndicator, ScrollView, StyleSheet, Text, TouchableOpacity, View
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { MapPin, MessageCircle, Share2, Heart } from 'lucide-react-native';
+import { Image } from 'expo-image';
 import { useApi, ListingPublic, conditionLabel, distanceLabel } from '@/lib/api';
 import { StatusPill } from '@/components/ui/StatusPill';
 import { Avatar } from '@/components/ui/Avatar';
@@ -77,11 +78,20 @@ export default function ListingScreen() {
       <ScrollView className="flex-1" contentContainerStyle={{ paddingBottom: 120 }} showsVerticalScrollIndicator={false}>
         {/* Cover hero */}
         <View className="mx-5 mt-2 rounded-card items-center justify-center py-10" style={{ backgroundColor: color.bg }}>
-          <View style={[styles.cover, { backgroundColor: color.bg }]}>
-            <Text style={[styles.coverLetter, { color: color.text }]} className="font-serif-bold">
-              {listing.book.title[0]}
-            </Text>
-          </View>
+          {listing.book.cover_url ? (
+            <Image
+              source={{ uri: listing.book.cover_url }}
+              style={styles.cover}
+              contentFit="cover"
+              transition={200}
+            />
+          ) : (
+            <View style={[styles.cover, { backgroundColor: color.bg }]}>
+              <Text style={[styles.coverLetter, { color: color.text }]} className="font-serif-bold">
+                {listing.book.title[0]}
+              </Text>
+            </View>
+          )}
         </View>
 
         <View className="px-5 pt-5 gap-4">

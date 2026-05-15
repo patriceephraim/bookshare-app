@@ -1,5 +1,6 @@
 import { Text, TouchableOpacity, View } from 'react-native';
 import { MapPin } from 'lucide-react-native';
+import { Image } from 'expo-image';
 import type { Book } from '@/lib/mock-data';
 import { StatusPill } from './StatusPill';
 
@@ -19,9 +20,10 @@ interface BookCardProps {
   book: Book;
   onPress?: () => void;
   showDistance?: boolean;
+  cover_url?: string | null;
 }
 
-export function BookCard({ book, onPress, showDistance = true }: BookCardProps) {
+export function BookCard({ book, onPress, showDistance = true, cover_url }: BookCardProps) {
   const colors = getCoverColor(book.id);
 
   return (
@@ -31,8 +33,12 @@ export function BookCard({ book, onPress, showDistance = true }: BookCardProps) 
       className="flex-row gap-4 bg-cream-100 rounded-card p-4 border border-cream-200"
     >
       {/* Book spine placeholder */}
-      <View className={`w-14 h-20 rounded-lg ${colors.bg} items-center justify-center flex-shrink-0`}>
-        <Text className={`${colors.text} font-serif-bold text-2xl`}>{book.title[0]}</Text>
+      <View className={`w-14 h-20 rounded-lg ${colors.bg} items-center justify-center flex-shrink-0 overflow-hidden`}>
+        {cover_url ? (
+          <Image source={{ uri: cover_url }} style={{ width: 56, height: 80 }} contentFit="cover" />
+        ) : (
+          <Text className={`${colors.text} font-serif-bold text-2xl`}>{book.title[0]}</Text>
+        )}
       </View>
 
       {/* Info */}

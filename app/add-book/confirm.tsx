@@ -45,15 +45,17 @@ export default function ConfirmScreen() {
     if (!imageUri) return;
     api.identifyBook(imageUri, mimeType ?? 'image/jpeg')
       .then(res => {
-        setBook(res.book);
         setConfidence(res.confidence);
-        setTitle(res.book.title);
-        setAuthor(res.book.author);
+        // Low confidence means Claude wasn't sure — treat the same as "not detected":
+        // show the manual-entry state with empty fields so the user fills in correctly.
+        if (res.confidence !== 'low') {
+          setBook(res.book);
+          setTitle(res.book.title);
+          setAuthor(res.book.author);
+        }
       })
       .catch(err => {
         setIdentifyError(err.message ?? 'Could not identify book');
-        setTitle('');
-        setAuthor('');
       })
       .finally(() => setIdentifying(false));
   }, [imageUri]);
@@ -87,7 +89,7 @@ export default function ConfirmScreen() {
                 <ActivityIndicator size="small" color="#3F7C6E" />
                 <Text className="font-sans text-sm text-ink-500">Identifying book…</Text>
               </View>
-            ) : identifyError ? (
+            ) : (identifyError || confidence === 'low') ? (
               <View className="flex-row items-center gap-2 bg-terracotta-50 rounded-pill px-3 py-1.5 self-start">
                 <AlertCircle size={12} color="#C8624A" strokeWidth={1.75} />
                 <Text className="font-sans-medium text-xs text-terracotta-500">Not detected — fill in manually</Text>

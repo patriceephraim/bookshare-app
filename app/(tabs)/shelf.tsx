@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, RefreshControl, ScrollView, Text, TouchableOpacity, View } from 'react-native';
+import { Image } from 'expo-image';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { useUser } from '@clerk/clerk-expo';
@@ -23,8 +24,12 @@ function ListingRow({ listing, onPress }: { listing: ListingPublic; onPress: () 
       activeOpacity={0.8}
       className="flex-row gap-4 bg-cream-100 rounded-card p-4 border border-cream-200"
     >
-      <View className="w-14 h-20 bg-teal-50 rounded-lg items-center justify-center flex-shrink-0">
-        <Text className="text-teal-500 font-serif-bold text-2xl">{listing.book.title[0]}</Text>
+      <View className="w-14 h-20 bg-teal-50 rounded-lg items-center justify-center flex-shrink-0 overflow-hidden">
+        {listing.book.cover_url ? (
+          <Image source={{ uri: listing.book.cover_url }} style={{ width: 56, height: 80 }} contentFit="cover" />
+        ) : (
+          <Text className="text-teal-500 font-serif-bold text-2xl">{listing.book.title[0]}</Text>
+        )}
       </View>
       <View className="flex-1 gap-1.5 justify-center">
         <Text className="font-serif text-base text-ink-900 leading-snug" numberOfLines={2}>
