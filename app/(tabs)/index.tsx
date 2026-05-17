@@ -8,6 +8,7 @@ import {
   View,
 } from 'react-native';
 import { Image } from 'expo-image';
+import MapView, { Marker, PROVIDER_DEFAULT } from 'react-native-maps';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Search, SlidersHorizontal } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
@@ -21,37 +22,6 @@ import { Avatar } from '@/components/ui/Avatar';
 // Maps API status → our StatusPill's expected values
 function pillStatus(s: string): 'available' | 'on-loan' {
   return s === 'available' ? 'available' : 'on-loan';
-}
-
-const PIN_COLORS: Record<string, { bg: string; border: string }> = {
-  available: { bg: '#3F7C6E', border: '#2E5C52' },
-  on_loan: { bg: '#B5AB99', border: '#7A6F5E' },
-};
-
-// Deterministic scatter so pins don't overlap — offset by index
-function pinPosition(
-  index: number,
-  listing: ListingNearby,
-  centerLat: number,
-  centerLng: number,
-  mapWidth: number,
-  mapHeight: number,
-) {
-  // Scale lat/lng delta to screen pixels — rough but visually correct at city scale
-  const scale = 40000; // pixels per degree
-  const dx = (listing.location.lng - centerLng) * scale;
-  const dy = (listing.location.lat - centerLat) * scale;
-  const left = mapWidth / 2 + dx;
-  const top = mapHeight / 2 - dy;
-  // Clamp to safe area with index-based jitter as fallback
-  const jitterPositions = [
-    { x: 0.22, y: 0.28 }, { x: 0.55, y: 0.42 }, { x: 0.38, y: 0.62 },
-    { x: 0.70, y: 0.22 }, { x: 0.15, y: 0.70 }, { x: 0.80, y: 0.58 },
-  ];
-  const j = jitterPositions[index % jitterPositions.length];
-  const fallback = { left: mapWidth * j.x, top: mapHeight * j.y };
-  const isOnScreen = left > 20 && left < mapWidth - 20 && top > 20 && top < mapHeight - 20;
-  return isOnScreen ? { left, top } : fallback;
 }
 
 export default function MapScreen() {
@@ -81,37 +51,32 @@ export default function MapScreen() {
     <View className="flex-1 bg-cream-50">
       {/* Map area */}
       <View style={[styles.mapArea, { height: mapHeight + insets.top }]}>
-        {/* Grid overlay */}
-        <View style={StyleSheet.absoluteFillObject}>
-          {Array.from({ length: 7 }).map((_, i) => (
-            <View key={`h${i}`} style={[styles.gridH, { top: `${14 * i}%` as any }]} />
-          ))}
-          {Array.from({ length: 7 }).map((_, i) => (
-            <View key={`v${i}`} style={[styles.gridV, { left: `${14 * i}%` as any }]} />
-          ))}
-        </View>
-
-        <View style={styles.roadH} />
-        <View style={styles.roadV} />
-
-        {/* Book pins */}
-        {listings.map((listing, i) => {
-          const pos = pinPosition(i, listing, location.lat, location.lng, width, mapHeight);
-          const pinColor = PIN_COLORS[listing.status] ?? PIN_COLORS.available;
-          return (
-            <TouchableOpacity
+        <MapView
+          style={StyleSheet.absoluteFillObject}
+          provider={PROVIDER_DEFAULT}
+          initialRegion={{
+            latitude: location.lat,
+            longitude: location.lng,
+            latitudeDelta: 0.02,
+            longitudeDelta: 0.02,
+          }}
+          showsUserLocation
+          showsMyLocationButton={false}
+        >
+          {listings.map((listing) => (
+            <Marker
               key={listing.id}
-              onPress={() => router.push(`/listing/${listing.id}` as any)}
-              style={[styles.pin, { left: pos.left, top: pos.top + insets.top }]}
-              activeOpacity={0.8}
-            >
-              <View style={[styles.pinDot, { backgroundColor: pinColor.bg, borderColor: pinColor.border }]} />
-              <View style={styles.pinLabel}>
-                <Text style={styles.pinText} numberOfLines={1}>{listing.book.title}</Text>
-              </View>
-            </TouchableOpacity>
-          );
-        })}
+              coordinate={{
+                latitude: listing.location.lat,
+                longitude: listing.location.lng,
+              }}
+              title={listing.book.title}
+              description={listing.book.author}
+              pinColor={listing.status === 'available' ? '#3F7C6E' : '#B5AB99'}
+              onCalloutPress={() => router.push(`/listing/${listing.id}` as any)}
+            />
+          ))}
+        </MapView>
 
         {loading && (
           <View style={[styles.loadingOverlay, { top: insets.top }]}>
@@ -216,14 +181,6 @@ export default function MapScreen() {
 
 const styles = StyleSheet.create({
   mapArea: { backgroundColor: '#E4EDEA', overflow: 'hidden' },
-  gridH: { position: 'absolute', left: 0, right: 0, height: StyleSheet.hairlineWidth, backgroundColor: '#C8D8D4' },
-  gridV: { position: 'absolute', top: 0, bottom: 0, width: StyleSheet.hairlineWidth, backgroundColor: '#C8D8D4' },
-  roadH: { position: 'absolute', top: '52%', left: 0, right: 0, height: 6, backgroundColor: '#D0DDD9', opacity: 0.8 },
-  roadV: { position: 'absolute', left: '35%', top: 0, bottom: 0, width: 6, backgroundColor: '#D0DDD9', opacity: 0.8 },
-  pin: { position: 'absolute', alignItems: 'center', transform: [{ translateX: -12 }, { translateY: -12 }] },
-  pinDot: { width: 24, height: 24, borderRadius: 12, borderWidth: 2, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.2, shadowRadius: 4, elevation: 4 },
-  pinLabel: { backgroundColor: '#FBF8F2', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4, marginTop: 2, maxWidth: 120, borderWidth: StyleSheet.hairlineWidth, borderColor: '#EAE0CB' },
-  pinText: { fontSize: 10, fontFamily: 'Inter_500Medium', color: '#1F1B16' },
   searchBar: { shadowColor: '#1F1B16', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.08, shadowRadius: 6, elevation: 4 },
   iconBtn: { shadowColor: '#1F1B16', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.08, shadowRadius: 6, elevation: 4 },
   chip: { shadowColor: '#1F1B16', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.06, shadowRadius: 3, elevation: 2 },
