@@ -1,11 +1,45 @@
-import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { useOAuth } from '@clerk/clerk-expo';
+import * as Linking from 'expo-linking';
+import * as WebBrowser from 'expo-web-browser';
+import { useState } from 'react';
+import {
+  ActivityIndicator,
+  Alert,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Globe, Mail } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
 import { BrandBlock } from '@/components/auth/BrandBlock';
 
+WebBrowser.maybeCompleteAuthSession();
+
 export default function WelcomeScreen() {
   const router = useRouter();
+  const { startOAuthFlow } = useOAuth({ strategy: 'oauth_google' });
+  const [submitting, setSubmitting] = useState(false);
+
+  const handleGoogleSignIn = async () => {
+    setSubmitting(true);
+    try {
+      const { createdSessionId, setActive } = await startOAuthFlow({
+        redirectUrl: Linking.createURL('/'),
+      });
+      if (createdSessionId) {
+        await setActive!({ session: createdSessionId });
+      }
+    } catch (err: any) {
+      Alert.alert(
+        'Could not sign in with Google',
+        err?.message ?? 'Please try again.'
+      );
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   return (
     <SafeAreaView style={styles.root}>
@@ -14,12 +48,19 @@ export default function WelcomeScreen() {
 
         <View style={styles.actions}>
           <TouchableOpacity
-            onPress={() => router.push('/(onboarding)/location')}
-            style={styles.primaryBtn}
+            onPress={handleGoogleSignIn}
+            disabled={submitting}
+            style={[styles.primaryBtn, submitting && styles.primaryBtnDisabled]}
             activeOpacity={0.82}
           >
-            <Globe size={18} color="#fff" strokeWidth={1.75} />
-            <Text style={styles.primaryLabel}>Continue with Google</Text>
+            {submitting ? (
+              <ActivityIndicator color="#fff" />
+            ) : (
+              <>
+                <Globe size={18} color="#fff" strokeWidth={1.75} />
+                <Text style={styles.primaryLabel}>Continue with Google</Text>
+              </>
+            )}
           </TouchableOpacity>
 
           <TouchableOpacity
@@ -62,6 +103,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     paddingVertical: 16,
   },
+  primaryBtnDisabled: { opacity: 0.5 },
   primaryLabel: {
     fontFamily: 'Inter_600SemiBold',
     fontSize: 16,
