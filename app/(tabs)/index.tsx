@@ -10,7 +10,7 @@ import {
 import { Image } from 'expo-image';
 import MapView, { Marker, PROVIDER_DEFAULT } from 'react-native-maps';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Search, SlidersHorizontal } from 'lucide-react-native';
+import { Search } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { useUser } from '@clerk/clerk-expo';
@@ -39,6 +39,12 @@ export default function MapScreen() {
 
   const [listings, setListings] = useState<ListingNearby[]>([]);
   const [loading, setLoading] = useState(true);
+  const [activeFilter, setActiveFilter] = useState<'all' | 'available' | 'under_1km'>('all');
+
+  const displayedListings =
+    activeFilter === 'under_1km'
+      ? listings.filter(l => l.distance_meters <= 1000)
+      : listings;
 
   useEffect(() => {
     api.listingsNearby(location.lat, location.lng, 3000)
@@ -85,7 +91,7 @@ export default function MapScreen() {
         )}
 
         {/* Top bar */}
-        <View style={{ paddingTop: insets.top + 12 }} className="absolute top-0 left-0 right-0 px-5">
+        <View style={{ paddingTop: insets.top + 12 }} className="absolute top-0 left-0 right-0 px-5" pointerEvents="box-none">
           <View className="flex-row items-center gap-3">
             <TouchableOpacity
               onPress={() => router.push('/(tabs)/search')}
@@ -107,23 +113,31 @@ export default function MapScreen() {
         </View>
 
         {/* Filter chips */}
-        <View className="absolute bottom-3 left-0 right-0">
+        <View className="absolute bottom-3 left-0 right-0" pointerEvents="box-none">
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 20, gap: 8, flexDirection: 'row' }}>
-            {['All', 'Available', 'Fiction', 'Non-fiction', 'Under 1 km'].map((chip) => (
-              <View
-                key={chip}
-                className={`rounded-pill px-4 py-2 border ${chip === 'All' ? 'bg-teal-500 border-teal-700' : 'bg-cream-50 border-cream-200'}`}
-                style={styles.chip}
-              >
-                <Text className={`font-sans-medium text-sm ${chip === 'All' ? 'text-white' : 'text-ink-700'}`}>
-                  {chip}
-                </Text>
-              </View>
-            ))}
-            <TouchableOpacity className="flex-row items-center gap-2 rounded-pill px-4 py-2 border bg-cream-50 border-cream-200" style={styles.chip}>
-              <SlidersHorizontal size={13} color="#3D362C" strokeWidth={1.75} />
-              <Text className="font-sans-medium text-sm text-ink-700">Filter</Text>
-            </TouchableOpacity>
+            {([
+              { key: 'all',       label: 'All'        },
+              { key: 'available', label: 'Available'  },
+              { key: 'under_1km', label: 'Under 1 km' },
+            ] as const).map(({ key, label }) => {
+              const active = activeFilter === key;
+              return (
+                <TouchableOpacity
+                  key={key}
+                  onPress={() => setActiveFilter(key)}
+                  className="rounded-pill px-4 py-2 border"
+                  style={[styles.chip, active ? styles.chipActive : styles.chipInactive]}
+                  activeOpacity={0.75}
+                >
+                  <Text
+                    className="font-sans-medium text-sm"
+                    style={active ? styles.chipLabelActive : styles.chipLabelInactive}
+                  >
+                    {label}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
           </ScrollView>
         </View>
       </View>
@@ -136,7 +150,7 @@ export default function MapScreen() {
       >
         <View className="flex-row items-baseline justify-between mb-2">
           <Text className="font-serif text-xl text-ink-900">Nearby</Text>
-          <Text className="font-sans text-sm text-ink-500">{listings.length} book{listings.length !== 1 ? 's' : ''}</Text>
+          <Text className="font-sans text-sm text-ink-500">{displayedListings.length} book{displayedListings.length !== 1 ? 's' : ''}</Text>
         </View>
 
         {loading ? (
@@ -144,13 +158,13 @@ export default function MapScreen() {
             <ActivityIndicator color="#3F7C6E" />
             <Text className="font-sans text-sm text-ink-500 mt-3">Finding books near you…</Text>
           </View>
-        ) : listings.length === 0 ? (
+        ) : displayedListings.length === 0 ? (
           <View className="py-8 items-center gap-2">
             <Text className="font-serif text-lg text-ink-700">No books nearby yet</Text>
             <Text className="font-sans text-sm text-ink-500 text-center">Be the first to share a book in your neighbourhood!</Text>
           </View>
         ) : (
-          listings.map((listing) => (
+          displayedListings.map((listing) => (
             <TouchableOpacity
               key={listing.id}
               onPress={() => router.push(`/listing/${listing.id}` as any)}
@@ -184,5 +198,9 @@ const styles = StyleSheet.create({
   searchBar: { shadowColor: '#1F1B16', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.08, shadowRadius: 6, elevation: 4 },
   iconBtn: { shadowColor: '#1F1B16', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.08, shadowRadius: 6, elevation: 4 },
   chip: { shadowColor: '#1F1B16', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.06, shadowRadius: 3, elevation: 2 },
+  chipActive:        { backgroundColor: '#3F7C6E', borderColor: '#2E5C52' },
+  chipInactive:      { backgroundColor: '#FBF8F2', borderColor: '#EAE0CB' },
+  chipLabelActive:   { color: '#ffffff' },
+  chipLabelInactive: { color: '#3D362C' },
   loadingOverlay: { position: 'absolute', left: 0, right: 0, bottom: 0, alignItems: 'center', justifyContent: 'center', paddingBottom: 60 },
 });
