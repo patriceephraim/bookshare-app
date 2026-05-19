@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Alert, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { MapPin, MessageCircle, Share2, Heart } from 'lucide-react-native';
 import { Image } from 'expo-image';
-import { useApi, ListingPublic, conditionLabel, distanceLabel } from '@/lib/api';
+import { useApi, ListingPublic, LoanPublic, conditionLabel, distanceLabel } from '@/lib/api';
+import { useMe } from '@/lib/MeContext';
 import { StatusPill } from '@/components/ui/StatusPill';
 import { Avatar } from '@/components/ui/Avatar';
 import { Button } from '@/components/ui/Button';
@@ -25,10 +26,12 @@ export default function ListingScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const api = useApi();
+  const { me } = useMe();
 
   const [listing, setListing] = useState<ListingPublic | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [loans, setLoans] = useState<LoanPublic[]>([]);
 
   useEffect(() => {
     if (!id) return;
@@ -37,6 +40,10 @@ export default function ListingScreen() {
       .catch(err => setError(err.message ?? 'Could not load listing'))
       .finally(() => setLoading(false));
   }, [id]);
+
+  useEffect(() => {
+    api.getMyLoans().then(setLoans).catch(() => {});
+  }, []);
 
   if (loading) {
     return (
@@ -61,6 +68,32 @@ export default function ListingScreen() {
   const colorIdx = listing.id.charCodeAt(0) % coverColors.length;
   const color = coverColors[colorIdx];
   const initials = listing.user.username.slice(0, 2).toUpperCase();
+
+  const isOwner = !!me && listing.user.id === me.id;
+
+  // Loan for this listing where the current user is the active lender (owner view)
+  const ownerActiveLoan = loans.find(
+    l => l.listing.id === listing.id && l.status === 'active'
+  );
+
+  // Loan for this listing where the current user is the borrower (borrower view)
+  // Only show the Message button when a loan relationship already exists.
+  const myBorrowerLoan = !isOwner
+    ? loans.find(
+        l =>
+          l.listing.id === listing.id &&
+          l.borrower.id === me?.id &&
+          (l.status === 'active' || l.status === 'requested')
+      )
+    : undefined;
+
+  const handleViewLoan = () => {
+    if (ownerActiveLoan) {
+      router.push(`/loan/${ownerActiveLoan.id}` as any);
+    } else {
+      Alert.alert('No active loan', 'There is no active loan for this listing yet.');
+    }
+  };
 
   return (
     <SafeAreaView className="flex-1 bg-cream-50" edges={['bottom']}>
@@ -126,13 +159,16 @@ export default function ListingScreen() {
                   </View>
                 </View>
               </View>
-              <TouchableOpacity
-                className="flex-row items-center gap-2 bg-cream-50 border border-cream-200 rounded-button px-4 py-2"
-                activeOpacity={0.7}
-              >
-                <MessageCircle size={14} color="#3F7C6E" strokeWidth={1.75} />
-                <Text className="font-sans-medium text-sm text-teal-500">Message</Text>
-              </TouchableOpacity>
+              {!isOwner && myBorrowerLoan && (
+                <TouchableOpacity
+                  className="flex-row items-center gap-2 bg-cream-50 border border-cream-200 rounded-button px-4 py-2"
+                  activeOpacity={0.7}
+                  onPress={() => router.push(`/chat/${myBorrowerLoan.lender.id}` as any)}
+                >
+                  <MessageCircle size={14} color="#3F7C6E" strokeWidth={1.75} />
+                  <Text className="font-sans-medium text-sm text-teal-500">Message</Text>
+                </TouchableOpacity>
+              )}
             </View>
           </View>
 
@@ -153,18 +189,25 @@ export default function ListingScreen() {
         </View>
       </ScrollView>
 
-      <View className="absolute bottom-0 left-0 right-0 px-5 py-4 bg-cream-50 border-t border-cream-200" style={styles.footer}>
-        {listing.status === 'available' ? (
-          <Button
-            label="Request to borrow"
-            onPress={() => router.push(`/listing/${listing.id}/borrow` as any)}
-            fullWidth
-            size="lg"
-          />
-        ) : (
-          <Button label="Join the waitlist" variant="outline" fullWidth size="lg" />
-        )}
-      </View>
+      {/* Footer CTA — hidden entirely for owners when available/hidden */}
+      {(isOwner && listing.status === 'on_loan') ? (
+        <View className="absolute bottom-0 left-0 right-0 px-5 py-4 bg-cream-50 border-t border-cream-200" style={styles.footer}>
+          <Button label="View loan" onPress={handleViewLoan} fullWidth size="lg" />
+        </View>
+      ) : !isOwner ? (
+        <View className="absolute bottom-0 left-0 right-0 px-5 py-4 bg-cream-50 border-t border-cream-200" style={styles.footer}>
+          {listing.status === 'available' ? (
+            <Button
+              label="Request to borrow"
+              onPress={() => router.push(`/listing/${listing.id}/borrow` as any)}
+              fullWidth
+              size="lg"
+            />
+          ) : (
+            <Button label="Join the waitlist" variant="outline" fullWidth size="lg" />
+          )}
+        </View>
+      ) : null}
     </SafeAreaView>
   );
 }

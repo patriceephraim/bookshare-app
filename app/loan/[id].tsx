@@ -108,7 +108,7 @@ export default function LoanScreen() {
               <Text className="font-sans-semibold text-base text-ink-900">@{otherPerson.username}</Text>
             </View>
             <TouchableOpacity
-              onPress={() => router.push(`/chat/${loan.id}` as any)}
+              onPress={() => router.push(`/chat/${otherPerson.id}` as any)}
               className="flex-row items-center gap-2 bg-cream-50 border border-cream-200 rounded-button px-4 py-2"
               activeOpacity={0.7}
             >
